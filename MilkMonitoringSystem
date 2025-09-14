@@ -1,0 +1,146 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+
+
+const char* ssid = "YOUR_WIFI_SSID";      // Replace with your WiFi network name
+const char* password = "YOUR_WIFI_PASSWORD";  // Replace with your WiFi password
+
+// Set web server port to 80
+WebServer server(80);
+
+// Define sensor pins
+const int pH_PIN = 32;      // Analog pin for pH sensor
+const int TURBIDITY_PIN = 33;  // Analog pin for turbidity sensor
+const int TEMP_PIN = 34;     // Analog pin for temperature sensor
+const int ODOR_PIN = 35;     // Analog pin for air quality/odor sensor
+
+// Variables to store sensor readings
+float pHValue = 7.0;
+float turbidityValue = 450.0;
+float temperatureValue = 6.0;
+float odorValue = 35.0;
+
+// Enable CORS for web requests
+void enableCORS() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+void setup() {
+  // Start serial communication
+  Serial.begin(115200);
+  
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  
+  Serial.println("\nConnecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  // Print local IP address
+  Serial.println("");
+  Serial.println("WiFi connected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  
+  // Define server endpoints
+  server.on("/data", HTTP_GET, handleGetData);
+  server.on("/", HTTP_GET, handleRoot);
+  server.onNotFound(handleNotFound);
+  
+  // Start server
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  // Handle client requests
+  server.handleClient();
+  
+  // Read sensor values
+  readSensors();
+  
+  // Small delay
+  delay(100);
+}
+
+// Read data from all connected sensors
+void readSensors() {
+  // Read pH sensor (convert analog reading to pH value)
+  int pHRaw = analogRead(pH_PIN);
+  // Replace with your calibration formula based on your pH sensor
+  pHValue = map(pHRaw, 0, 4095, 50, 80) / 10.0;  // Example mapping from 5.0 to 8.0 pH
+  
+  // Read turbidity sensor (convert analog reading to NTU)
+  int turbidityRaw = analogRead(TURBIDITY_PIN);
+  // Replace with your calibration formula based on your turbidity sensor
+  turbidityValue = map(turbidityRaw, 0, 4095, 0, 1000);  // Example mapping from 0 to 1000 NTU
+  
+  // Read temperature sensor (convert analog reading to Celsius)
+  int tempRaw = analogRead(TEMP_PIN);
+  // Replace with your calibration formula based on your temperature sensor
+  temperatureValue = map(tempRaw, 0, 4095, 0, 30);  // Example mapping from 0 to 30°C
+  
+  // Read air quality/odor sensor (convert analog reading to PPM)
+  int odorRaw = analogRead(ODOR_PIN);
+  // Replace with your calibration formula based on your odor sensor
+  odorValue = map(odorRaw, 0, 4095, 0, 200);  // Example mapping from 0 to 200 PPM
+  
+  // Print sensor values to serial monitor for debugging
+  Serial.println("Sensor Readings:");
+  Serial.print("pH: "); Serial.println(pHValue);
+  Serial.print("Turbidity: "); Serial.println(turbidityValue);
+  Serial.print("Temperature: "); Serial.println(temperatureValue);
+  Serial.print("Odor: "); Serial.println(odorValue);
+  Serial.println();
+}
+
+// Handle root endpoint
+void handleRoot() {
+  enableCORS();
+  String html = "<html><head><title>ESP32 Milk Quality Sensor</title></head>";
+  html += "<body><h1>ESP32 Milk Quality Sensor</h1>";
+  html += "<p>This is the ESP32 Milk Quality Monitoring server.</p>";
+  html += "<p>Access /data endpoint to get JSON sensor data.</p>";
+  html += "<p>Current readings:</p>";
+  html += "<ul>";
+  html += "<li>pH: " + String(pHValue) + "</li>";
+  html += "<li>Turbidity: " + String(turbidityValue) + " NTU</li>";
+  html += "<li>Temperature: " + String(temperatureValue) + " °C</li>";
+  html += "<li>Air Quality: " + String(odorValue) + " PPM</li>";
+  html += "</ul>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+// Handle data endpoint - returns JSON with sensor readings
+void handleGetData() {
+  enableCORS();
+  
+  // Create JSON document
+  StaticJsonDocument<200> jsonDoc;
+  
+  // Add sensor values to JSON
+  jsonDoc["ph"] = pHValue;
+  jsonDoc["turbidity"] = turbidityValue;
+  jsonDoc["temperature"] = temperatureValue;
+  jsonDoc["odor"] = odorValue;
+  jsonDoc["milkType"] = "cow";  // Default - can be overridden with a parameter
+  
+  // Convert JSON to string
+  String jsonString;
+  serializeJson(jsonDoc, jsonString);
+  
+  // Send response
+  server.send(200, "application/json", jsonString);
+}
+
+// Handle undefined endpoints
+void handleNotFound() {
+  enableCORS();
+  server.send(404, "text/plain", "Not found");
+}
